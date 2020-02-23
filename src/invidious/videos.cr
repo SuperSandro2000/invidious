@@ -325,7 +325,7 @@ struct Video
         json.field "hlsUrl", hlsvp
       end
 
-      json.field "dashUrl", "#{make_host_url(config, kemal_config)}/api/manifest/dash/id/#{id}"
+      json.field "dashUrl", "#{HOST_URL}/api/manifest/dash/id/#{id}"
 
       json.field "adaptiveFormats" do
         json.array do
@@ -424,7 +424,7 @@ struct Video
                 json.field "videoId", rv["id"]
                 json.field "title", rv["title"]
                 json.field "videoThumbnails" do
-                  generate_thumbnails(json, rv["id"], config, kemal_config)
+                  generate_thumbnails(json, rv["id"])
                 end
 
                 json.field "author", rv["author"]
@@ -457,12 +457,12 @@ struct Video
     end
   end
 
-  def to_json(locale, config, kemal_config, decrypt_function, json : JSON::Builder | Nil = nil)
+  def to_json(locale, json : JSON::Builder | Nil = nil)
     if json
-      to_json(locale, config, kemal_config, decrypt_function, json)
+      to_json(locale, json)
     else
       JSON.build do |json|
-        to_json(locale, config, kemal_config, decrypt_function, json)
+        to_json(locale, json)
       end
     end
   end
@@ -744,9 +744,7 @@ struct Video
       storyboard_height: Int32,
       storyboard_count: Int32)
 
-    if !storyboards
-      return items
-    end
+    return items if !storyboards
 
     url = URI.parse(storyboards.shift)
     params = HTTP::Params.parse(url.query || "")
@@ -1391,9 +1389,9 @@ def process_video_params(query, preferences)
   return params
 end
 
-def build_thumbnails(id, config, kemal_config)
+def build_thumbnails(id)
   return {
-    {name: "maxres", host: "#{make_host_url(config, kemal_config)}", url: "maxres", height: 720, width: 1280},
+    {name: "maxres", host: "#{HOST_URL}", url: "maxres", height: 720, width: 1280},
     {name: "maxresdefault", host: "https://i.ytimg.com", url: "maxresdefault", height: 720, width: 1280},
     {name: "sddefault", host: "https://i.ytimg.com", url: "sddefault", height: 480, width: 640},
     {name: "high", host: "https://i.ytimg.com", url: "hqdefault", height: 360, width: 480},
@@ -1405,9 +1403,9 @@ def build_thumbnails(id, config, kemal_config)
   }
 end
 
-def generate_thumbnails(json, id, config, kemal_config)
+def generate_thumbnails(json, id)
   json.array do
-    build_thumbnails(id, config, kemal_config).each do |thumbnail|
+    build_thumbnails(id).each do |thumbnail|
       json.object do
         json.field "quality", thumbnail[:name]
         json.field "url", "#{thumbnail[:host]}/vi/#{id}/#{thumbnail["url"]}.jpg"
@@ -1418,7 +1416,7 @@ def generate_thumbnails(json, id, config, kemal_config)
   end
 end
 
-def generate_storyboards(json, id, storyboards, config, kemal_config)
+def generate_storyboards(json, id, storyboards)
   json.array do
     storyboards.each do |storyboard|
       json.object do
