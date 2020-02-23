@@ -59,7 +59,7 @@ end
 
 def fetch_youtube_comments(id, db, cursor, format, locale, thin_mode, region, sort_by = "top")
   video = get_video(id, db, region: region)
-  session_token = video.info["session_token"]?
+  session_token = video.session_token
 
   case cursor
   when nil, ""
@@ -88,11 +88,11 @@ def fetch_youtube_comments(id, db, cursor, format, locale, thin_mode, region, so
   headers = HTTP::Headers.new
 
   headers["content-type"] = "application/x-www-form-urlencoded"
-  headers["cookie"] = video.info["cookie"]
+  headers["cookie"] = video.cookie
 
   headers["x-client-data"] = "CIi2yQEIpbbJAQipncoBCNedygEIqKPKAQ=="
-  headers["x-spf-previous"] = "https://www.youtube.com/watch?v=#{id}&gl=US&hl=en&disable_polymer=1&has_verified=1&bpctr=9999999999"
-  headers["x-spf-referer"] = "https://www.youtube.com/watch?v=#{id}&gl=US&hl=en&disable_polymer=1&has_verified=1&bpctr=9999999999"
+  headers["x-spf-previous"] = "https://www.youtube.com/watch?v=#{id}&gl=US&hl=en&has_verified=1&bpctr=9999999999"
+  headers["x-spf-referer"] = "https://www.youtube.com/watch?v=#{id}&gl=US&hl=en&has_verified=1&bpctr=9999999999"
 
   headers["x-youtube-client-name"] = "1"
   headers["x-youtube-client-version"] = "2.20180719"

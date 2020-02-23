@@ -621,18 +621,14 @@ def check_table(db, logger, table_name, struct_type = nil)
     end
   end
 
-  if !struct_type
-    return
-  end
+  return if !struct_type
 
   struct_array = struct_type.to_type_tuple
   column_array = get_column_array(db, table_name)
   column_types = File.read("config/sql/#{table_name}.sql").match(/CREATE TABLE public\.#{table_name}\n\((?<types>[\d\D]*?)\);/)
-    .try &.["types"].split(",").map { |line| line.strip }
+    .try &.["types"].split(",").map { |line| line.strip }.reject &.starts_with?("CONSTRAINT")
 
-  if !column_types
-    return
-  end
+  return if !column_types
 
   struct_array.each_with_index do |name, i|
     if name != column_array[i]?
@@ -683,6 +679,15 @@ def check_table(db, logger, table_name, struct_type = nil)
       end
     end
   end
+
+  return if column_array.size <= struct_array.size
+
+  column_array.each do |column|
+    if !struct_array.includes? column
+      logger.puts("ALTER TABLE #{table_name} DROP COLUMN #{column} CASCADE")
+      db.exec("ALTER TABLE #{table_name} DROP COLUMN #{column} CASCADE")
+    end
+  end
 end
 
 class PG::ResultSet
@@ -721,10 +726,7 @@ def cache_annotation(db, id, annotations)
     end
   end
 
-  if has_legacy_annotations
-    # TODO: Update on conflict?
-    db.exec("INSERT INTO annotations VALUES ($1, $2) ON CONFLICT DO NOTHING", id, annotations)
-  end
+  db.exec("INSERT INTO annotations VALUES ($1, $2) ON CONFLICT DO NOTHING", id, annotations) if has_legacy_annotations
 end
 
 def create_notification_stream(env, topics, connection_channel)
