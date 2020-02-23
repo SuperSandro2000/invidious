@@ -291,15 +291,13 @@ struct Video
 
       json.field "authorThumbnails" do
         json.array do
-          if !self.author_thumbnail.empty?
-            qualities = {32, 48, 76, 100, 176, 512}
+          qualities = {32, 48, 76, 100, 176, 512}
 
-            qualities.each do |quality|
-              json.object do
-                json.field "url", self.author_thumbnail.gsub(/=s\d+/, "=s#{quality}")
-                json.field "width", quality
-                json.field "height", quality
-              end
+          qualities.each do |quality|
+            json.object do
+              json.field "url", self.author_thumbnail.gsub(/=s\d+/, "=s#{quality}")
+              json.field "width", quality
+              json.field "height", quality
             end
           end
         end
@@ -318,7 +316,8 @@ struct Video
         json.field "premiereTimestamp", self.premiere_timestamp.try &.to_unix
       end
 
-      if hlsvp = self.hls_manifest_url(local: true)
+      if hlsvp = self.hls_manifest_url
+        hlsvp = hlsvp.gsub("https://manifest.googlevideo.com", HOST_URL)
         json.field "hlsUrl", hlsvp
       end
 
@@ -425,14 +424,14 @@ struct Video
                 json.field "author", rv["author"]
                 json.field "authorUrl", rv["author_url"]?
                 json.field "authorId", rv["ucid"]?
-                if thumb = rv["author_thumbnail"]?
+                if rv["author_thumbnail"]?
                   json.field "authorThumbnails" do
                     json.array do
                       qualities = {32, 48, 76, 100, 176, 512}
 
                       qualities.each do |quality|
                         json.object do
-                          json.field "url", thumb.gsub(/s\d+-/, "s#{quality}-")
+                          json.field "url", rv["author_thumbnail"]?.try &.gsub(/s\d+-/, "s#{quality}-")
                           json.field "width", quality
                           json.field "height", quality
                         end
@@ -526,50 +525,17 @@ struct Video
   end
 
   def premiere_timestamp : Time?
-    timestamp = info["microformat"]?.try &.["playerMicroformatRenderer"]?
+    info["microformat"]?.try &.["playerMicroformatRenderer"]?
       .try &.["liveBroadcastDetails"]?.try &.["startTimestamp"]?.try { |t| Time.parse_rfc3339(t.as_s) }
-    (timestamp.try &.< Time.local) ? nil : timestamp
   end
 
   def keywords
     info["videoDetails"]["keywords"]?.try &.as_a.map &.as_s || [] of String
   end
 
-  def fmt_stream(decrypt_function)
-    streams = [] of HTTP::Params
-
-    if fmt_streams = player_response["streamingData"]?.try &.["formats"]?
-      fmt_streams.as_a.each do |fmt_stream|
-        if !fmt_stream.as_h?
-          next
-        end
-
-        fmt = {} of String => String
-
-        fmt["lmt"] = fmt_stream["lastModified"]?.try &.as_s || "0"
-        fmt["projection_type"] = "1"
-        fmt["type"] = fmt_stream["mimeType"].as_s
-        fmt["clen"] = fmt_stream["contentLength"]?.try &.as_s || "0"
-        fmt["bitrate"] = fmt_stream["bitrate"]?.try &.as_i.to_s || "0"
-        fmt["itag"] = fmt_stream["itag"].as_i.to_s
-        if fmt_stream["url"]?
-          fmt["url"] = fmt_stream["url"].as_s
-        end
-        if cipher = fmt_stream["cipher"]? || fmt_stream["signatureCipher"]?
-          HTTP::Params.parse(cipher.as_s).each do |key, value|
-            fmt[key] = value
-          end
-        end
-        fmt["quality"] = fmt_stream["quality"].as_s
-
-        if fmt_stream["width"]?
-          fmt["size"] = "#{fmt_stream["width"]}x#{fmt_stream["height"]}"
-          fmt["height"] = fmt_stream["height"].as_i.to_s
-        end
-
-        if fmt_stream["fps"]?
-          fmt["fps"] = fmt_stream["fps"].as_i.to_s
-        end
+  def related_videos
+    info["relatedVideos"]?.try &.as_a.map { |h| h.as_h.transform_values &.as_s } || [] of Hash(String, String)
+  end
 
   def allowed_regions
     info["microformat"]?.try &.["playerMicroformatRenderer"]?
@@ -588,7 +554,7 @@ struct Video
     return @fmt_stream.as(Array(Hash(String, JSON::Any))) if @fmt_stream
     fmt_stream = info["streamingData"]?.try &.["formats"]?.try &.as_a.map &.as_h || [] of Hash(String, JSON::Any)
     fmt_stream.each do |fmt|
-      if s = (fmt["cipher"]?||fmt["signatureCipher"]?).try { |h| HTTP::Params.parse(h.as_s) }
+      if s = (fmt["cipher"]? || fmt["signatureCipher"]?).try { |h| HTTP::Params.parse(h.as_s) }
         s.each do |k, v|
           fmt[k] = JSON::Any.new(v)
         end
@@ -607,7 +573,7 @@ struct Video
     return @adaptive_fmts.as(Array(Hash(String, JSON::Any))) if @adaptive_fmts
     fmt_stream = info["streamingData"]?.try &.["adaptiveFormats"]?.try &.as_a.map &.as_h || [] of Hash(String, JSON::Any)
     fmt_stream.each do |fmt|
-      if s = (fmt["cipher"]?||fmt["signatureCipher"]?).try { |h| HTTP::Params.parse(h.as_s) }
+      if s = (fmt["cipher"]? || fmt["signatureCipher"]?).try { |h| HTTP::Params.parse(h.as_s) }
         s.each do |k, v|
           fmt[k] = JSON::Any.new(v)
         end
@@ -743,8 +709,8 @@ struct Video
     info["shortDescription"]?.try &.as_s || ""
   end
 
-  def hls_manifest_url(local = false) : String?
-    info["streamingData"]?.try &.["hlsManifestUrl"]?.try &.as_s.try { |u| local ? u.gsub("https://manifest.googlevideo.com", HOST_URL) : u }
+  def hls_manifest_url : String?
+    info["streamingData"]?.try &.["hlsManifestUrl"]?.try &.as_s
   end
 
   def dash_manifest_url
@@ -858,7 +824,8 @@ def extract_polymer_config(body)
     params[f] = player_response[f] if player_response[f]?
   end
 
-  yt_initial_data = extract_initial_data(body)
+  yt_initial_data = body.match(/window\["ytInitialData"\]\s*=\s*(?<info>.*?);\n/)
+    .try { |r| JSON.parse(r["info"]).as_h }
 
   params["relatedVideos"] = yt_initial_data.try &.["playerOverlays"]?.try &.["playerOverlayRenderer"]?
     .try &.["endScreen"]?.try &.["watchNextEndScreenRenderer"]?.try &.["results"]?.try &.as_a.compact_map { |r|
@@ -926,9 +893,9 @@ def extract_polymer_config(body)
   params["subCountText"] = JSON::Any.new(author_info.try &.["subscriberCountText"]?
     .try { |t| t["simpleText"]? || t["runs"]?.try &.[0]?.try &.["text"]? }.try &.as_s.split(" ", 2)[0] || "-")
 
-  initial_data = body.match(/ytplayer\.config\s*=\s*(?<info>.*?);+ytplayer\.load/)
+  initial_data = body.match(/ytplayer\.config\s*=\s*(?<info>.*?);ytplayer\.load/)
     .try { |r| JSON.parse(r["info"]) }.try &.["args"]["player_response"]?
-    .try &.as_s?.try { |r| JSON.parse(r).as_h }
+    .try &.as_s?.try &.rchop(";").try { |r| JSON.parse(r).as_h }
 
   return params if !initial_data
 

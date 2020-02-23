@@ -478,7 +478,8 @@ get "/watch" do |env|
         source = preferences.comments[1]
       end
 
-      if source == "youtube"
+      case source
+      when "youtube"
         begin
           comment_html = JSON.parse(fetch_youtube_comments(id, PG_DB, nil, "html", locale, preferences.thin_mode, region))["contentHtml"]
         rescue ex
@@ -490,7 +491,7 @@ get "/watch" do |env|
             comment_html = replace_links(comment_html)
           end
         end
-      elsif source == "reddit"
+      when "reddit"
         begin
           comments, reddit_thread = fetch_reddit_comments(id)
           comment_html = template_reddit_comments(comments, locale)
@@ -3512,14 +3513,14 @@ get "/channel/:ucid" do |env|
         item.author
       end
     end
-    items = items.select { |item| item.is_a?(SearchPlaylist) }.map { |item| item.as(SearchPlaylist) }
+    items = items.select(&.is_a?(SearchPlaylist)).map(&.as(SearchPlaylist))
     items.each { |item| item.author = "" }
   else
     sort_options = {"newest", "oldest", "popular"}
     sort_by ||= "newest"
 
-    items, count = get_60_videos(channel.ucid, channel.author, page, channel.auto_generated, sort_by)
-    items.select! { |item| !item.paid }
+    count, items = get_60_videos(channel.ucid, channel.author, page, channel.auto_generated, sort_by)
+    items.reject! &.paid
 
     env.set "search", "channel:#{channel.ucid} "
   end
@@ -3871,7 +3872,8 @@ get "/api/v1/comments/:id" do |env|
   continuation = env.params.query["continuation"]?
   sort_by = env.params.query["sort_by"]?.try &.downcase
 
-  if source == "youtube"
+  case source
+  when "youtube"
     sort_by ||= "top"
 
     begin
@@ -3883,7 +3885,7 @@ get "/api/v1/comments/:id" do |env|
     end
 
     next comments
-  elsif source == "reddit"
+  when "reddit"
     sort_by ||= "confidence"
 
     begin
@@ -4106,7 +4108,7 @@ get "/api/v1/channels/:ucid" do |env|
     count = 0
   else
     begin
-      videos, count = get_60_videos(channel.ucid, channel.author, page, channel.auto_generated, sort_by)
+      count, videos = get_60_videos(channel.ucid, channel.author, page, channel.auto_generated, sort_by)
     rescue ex
       error_message = {"error" => ex.message}.to_json
       env.response.status_code = 500
@@ -4236,7 +4238,7 @@ end
     end
 
     begin
-      videos, count = get_60_videos(channel.ucid, channel.author, page, channel.auto_generated, sort_by)
+      count, videos = get_60_videos(channel.ucid, channel.author, page, channel.auto_generated, sort_by)
     rescue ex
       error_message = {"error" => ex.message}.to_json
       env.response.status_code = 500

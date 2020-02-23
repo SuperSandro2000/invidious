@@ -232,9 +232,9 @@ def fetch_channel(ucid, db, pull_all_videos = true, locale = nil)
     nodeset = document.xpath_nodes(%q(//li[contains(@class, "feed-item-container")]))
 
     if auto_generated
-      videos = extract_videos(nodeset)
+      videos = extract_videos_html(nodeset)
     else
-      videos = extract_videos(nodeset, ucid, author)
+      videos = extract_videos_html(nodeset, ucid, author)
     end
   end
 
@@ -317,9 +317,9 @@ def fetch_channel(ucid, db, pull_all_videos = true, locale = nil)
       nodeset = nodeset.not_nil!
 
       if auto_generated
-        videos = extract_videos(nodeset)
+        videos = extract_videos_html(nodeset)
       else
-        videos = extract_videos(nodeset, ucid, author)
+        videos = extract_videos_html(nodeset, ucid, author)
       end
 
       count = nodeset.size
@@ -429,7 +429,7 @@ def fetch_channel_playlists(ucid, author, auto_generated, continuation, sort_by)
   if auto_generated
     items = extract_shelf_items(nodeset, ucid, author)
   else
-    items = extract_items(nodeset, ucid, author)
+    items = extract_items_html(nodeset, ucid, author)
   end
 
   return items, continuation
@@ -633,13 +633,7 @@ def fetch_channel_community(ucid, continuation, locale, format, thin_mode)
 
             next if !post
 
-            if !post["contentText"]?
-              content_html = ""
-            else
-              content_html = post["contentText"]["simpleText"]?.try &.as_s.rchop('\ufeff').try { |b| HTML.escape(b) }.to_s ||
-                             post["contentText"]["runs"]?.try &.as_a.try { |r| content_to_comment_html(r).try &.to_s } || ""
-            end
-
+            content_html = post["contentText"]?.try { |t| parse_content(t) } || ""
             author = post["authorText"]?.try &.["simpleText"]? || ""
 
             json.object do
@@ -956,33 +950,21 @@ def get_about_info(ucid, locale)
 end
 
 def get_60_videos(ucid, author, page, auto_generated, sort_by = "newest")
-  count = 0
   videos = [] of SearchVideo
 
   2.times do |i|
     url = produce_channel_videos_url(ucid, page * 2 + (i - 1), auto_generated: auto_generated, sort_by: sort_by)
-    response = YT_POOL.client &.get(url)
-    json = JSON.parse(response.body)
-
-    if json["content_html"]? && !json["content_html"].as_s.empty?
-      document = XML.parse_html(json["content_html"].as_s)
-      nodeset = document.xpath_nodes(%q(//li[contains(@class, "feed-item-container")]))
-
-      if !json["load_more_widget_html"]?.try &.as_s.empty?
-        count += 30
-      end
-
-      if auto_generated
-        videos += extract_videos(nodeset)
-      else
-        videos += extract_videos(nodeset, ucid, author)
-      end
-    else
-      break
-    end
+    headers = HTTP::Headers{
+      "User-Agent"               => "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.116 Safari/537.36",
+      "x-youtube-client-version" => "2.20200221.03.00",
+    }
+    response = YT_POOL.client &.get(url, headers)
+    initial_data = JSON.parse(response.body).as_a.find &.["response"]?
+    break if !initial_data
+    videos.concat extract_videos(initial_data.as_h)
   end
 
-  return videos, count
+  return videos.size, videos
 end
 
 def get_latest_videos(ucid)
@@ -996,7 +978,7 @@ def get_latest_videos(ucid)
     document = XML.parse_html(json["content_html"].as_s)
     nodeset = document.xpath_nodes(%q(//li[contains(@class, "feed-item-container")]))
 
-    videos = extract_videos(nodeset, ucid)
+    videos = extract_videos_html(nodeset, ucid)
   end
 
   return videos

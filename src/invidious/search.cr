@@ -78,6 +78,11 @@ struct SearchVideo
       json.field "liveNow", self.live_now
       json.field "paid", self.paid
       json.field "premium", self.premium
+      json.field "isUpcoming", self.is_upcoming
+
+      if self.premiere_timestamp
+        json.field "premiereTimestamp", self.premiere_timestamp.try &.to_unix
+      end
     end
   end
 
@@ -89,6 +94,10 @@ struct SearchVideo
         to_json(locale, json)
       end
     end
+  end
+
+  def is_upcoming
+    premiere_timestamp ? true : false
   end
 
   db_mapping({
@@ -222,61 +231,51 @@ end
 alias SearchItem = SearchVideo | SearchChannel | SearchPlaylist
 
 def channel_search(query, page, channel)
-  response = YT_POOL.client &.get("/channel/#{channel}?disable_polymer=1&hl=en&gl=US")
+  response = YT_POOL.client &.get("/channel/#{channel}?hl=en&gl=US")
   document = XML.parse_html(response.body)
   canonical = document.xpath_node(%q(//link[@rel="canonical"]))
 
   if !canonical
-    response = YT_POOL.client &.get("/c/#{channel}?disable_polymer=1&hl=en&gl=US")
+    response = YT_POOL.client &.get("/c/#{channel}?hl=en&gl=US")
     document = XML.parse_html(response.body)
     canonical = document.xpath_node(%q(//link[@rel="canonical"]))
   end
 
   if !canonical
-    response = YT_POOL.client &.get("/user/#{channel}?disable_polymer=1&hl=en&gl=US")
+    response = YT_POOL.client &.get("/user/#{channel}?hl=en&gl=US")
     document = XML.parse_html(response.body)
     canonical = document.xpath_node(%q(//link[@rel="canonical"]))
   end
 
-  if !canonical
-    return 0, [] of SearchItem
-  end
+  return 0, [] of SearchItem if !canonical
 
   ucid = canonical["href"].split("/")[-1]
 
   url = produce_channel_search_url(ucid, query, page)
-  response = YT_POOL.client &.get(url)
-  json = JSON.parse(response.body)
+  headers = HTTP::Headers{
+    "User-Agent"               => "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.116 Safari/537.36",
+    "x-youtube-client-version" => "2.20200221.03.00",
+  }
+  response = YT_POOL.client &.get(url, headers)
+  initial_data = JSON.parse(response.body).as_a.find &.["response"]?
+  return 0, [] of SearchItem if !initial_data
+  items = extract_items(initial_data.as_h)
 
-  if json["content_html"]? && !json["content_html"].as_s.empty?
-    document = XML.parse_html(json["content_html"].as_s)
-    nodeset = document.xpath_nodes(%q(//li[contains(@class, "feed-item-container")]))
-
-    count = nodeset.size
-    items = extract_items(nodeset)
-  else
-    count = 0
-    items = [] of SearchItem
-  end
-
-  return count, items
+  return items.size, items
 end
 
 def search(query, page = 1, search_params = produce_search_params(content_type: "all"), region = nil)
-  if query.empty?
-    return {0, [] of SearchItem}
-  end
+  return 0, [] of SearchItem if query.empty?
 
-  html = YT_POOL.client(region, &.get("/results?q=#{URI.encode_www_form(query)}&page=#{page}&sp=#{search_params}&hl=en&disable_polymer=1").body)
-  if html.empty?
-    return {0, [] of SearchItem}
-  end
+  body = YT_POOL.client(region, &.get("/results?q=#{URI.encode_www_form(query)}&page=#{page}&sp=#{search_params}&hl=en").body)
+  return 0, [] of SearchItem if body.empty?
 
-  html = XML.parse_html(html)
-  nodeset = html.xpath_nodes(%q(//ol[@class="item-section"]/li))
-  items = extract_items(nodeset)
+  initial_data = extract_initial_data(body)
+  items = extract_items(initial_data)
 
-  return {nodeset.size, items}
+  # initial_data["estimatedResults"]?.try &.as_s.to_i64
+
+  return items.size, items
 end
 
 def produce_search_params(sort : String = "relevance", date : String = "", content_type : String = "",
@@ -382,12 +381,9 @@ def produce_channel_search_url(ucid, query, page)
       "2:string" => ucid,
       "3:base64" => {
         "2:string"  => "search",
-        "6:varint"  => 2_i64,
         "7:varint"  => 1_i64,
-        "12:varint" => 1_i64,
-        "13:string" => "",
-        "23:varint" => 0_i64,
         "15:string" => "#{page}",
+        "23:varint" => 0_i64,
       },
       "11:string" => query,
     },

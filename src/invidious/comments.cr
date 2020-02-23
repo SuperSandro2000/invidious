@@ -150,8 +150,7 @@ def fetch_youtube_comments(id, db, cursor, format, locale, thin_mode, region, so
                 node_comment = node["commentRenderer"]
               end
 
-              content_html = node_comment["contentText"]["simpleText"]?.try &.as_s.rchop('\ufeff').try { |b| HTML.escape(b) }.to_s ||
-                             node_comment["contentText"]["runs"]?.try &.as_a.try { |r| content_to_comment_html(r).try &.to_s } || ""
+              content_html = node_comment["contentText"]?.try { |t| parse_content(t) } || ""
               author = node_comment["authorText"]?.try &.["simpleText"]? || ""
 
               json.field "author", author
@@ -521,6 +520,11 @@ def fill_links(html, scheme, host)
   end
 
   return html.to_xml(options: XML::SaveOptions::NO_DECL)
+end
+
+def parse_content(content : JSON::Any) : String
+  content["simpleText"]?.try &.as_s.rchop('\ufeff').try { |b| HTML.escape(b) }.to_s ||
+    content["runs"]?.try &.as_a.try { |r| content_to_comment_html(r).try &.to_s } || ""
 end
 
 def content_to_comment_html(content)
