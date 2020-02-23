@@ -198,7 +198,9 @@
         <div class="h-box">
             <a href="/channel/<%= video.ucid %>" style="display:block;width:fit-content;width:-moz-fit-content">
                 <div class="channel-profile">
-                    <img src="/ggpht<%= URI.parse(video.author_thumbnail).full_path %>">
+                    <% if !video.author_thumbnail.empty? %>
+                        <img src="/ggpht<%= URI.parse(video.author_thumbnail).full_path %>">
+                    <% end %>
                     <span><%= video.author %></span>
                 </div>
             </a>

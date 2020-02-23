@@ -291,13 +291,15 @@ struct Video
 
       json.field "authorThumbnails" do
         json.array do
-          qualities = {32, 48, 76, 100, 176, 512}
+          if !self.author_thumbnail.empty?
+            qualities = {32, 48, 76, 100, 176, 512}
 
-          qualities.each do |quality|
-            json.object do
-              json.field "url", self.author_thumbnail.gsub(/=s\d+/, "=s#{quality}")
-              json.field "width", quality
-              json.field "height", quality
+            qualities.each do |quality|
+              json.object do
+                json.field "url", self.author_thumbnail.gsub(/=s\d+/, "=s#{quality}")
+                json.field "width", quality
+                json.field "height", quality
+              end
             end
           end
         end
@@ -316,8 +318,7 @@ struct Video
         json.field "premiereTimestamp", self.premiere_timestamp.try &.to_unix
       end
 
-      if hlsvp = self.hls_manifest_url
-        hlsvp = hlsvp.gsub("https://manifest.googlevideo.com", HOST_URL)
+      if hlsvp = self.hls_manifest_url(local: true)
         json.field "hlsUrl", hlsvp
       end
 
@@ -424,14 +425,14 @@ struct Video
                 json.field "author", rv["author"]
                 json.field "authorUrl", rv["author_url"]?
                 json.field "authorId", rv["ucid"]?
-                if rv["author_thumbnail"]?
+                if thumb = rv["author_thumbnail"]?
                   json.field "authorThumbnails" do
                     json.array do
                       qualities = {32, 48, 76, 100, 176, 512}
 
                       qualities.each do |quality|
                         json.object do
-                          json.field "url", rv["author_thumbnail"]?.try &.gsub(/s\d+-/, "s#{quality}-")
+                          json.field "url", thumb.gsub(/s\d+-/, "s#{quality}-")
                           json.field "width", quality
                           json.field "height", quality
                         end
@@ -525,8 +526,9 @@ struct Video
   end
 
   def premiere_timestamp : Time?
-    info["microformat"]?.try &.["playerMicroformatRenderer"]?
+    timestamp = info["microformat"]?.try &.["playerMicroformatRenderer"]?
       .try &.["liveBroadcastDetails"]?.try &.["startTimestamp"]?.try { |t| Time.parse_rfc3339(t.as_s) }
+    (timestamp.try &.< Time.local) ? nil : timestamp
   end
 
   def keywords
@@ -741,8 +743,8 @@ struct Video
     info["shortDescription"]?.try &.as_s || ""
   end
 
-  def hls_manifest_url : String?
-    info["streamingData"]?.try &.["hlsManifestUrl"]?.try &.as_s
+  def hls_manifest_url(local = false) : String?
+    info["streamingData"]?.try &.["hlsManifestUrl"]?.try &.as_s.try { |u| local ? u.gsub("https://manifest.googlevideo.com", HOST_URL) : u }
   end
 
   def dash_manifest_url
