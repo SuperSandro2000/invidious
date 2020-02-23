@@ -858,8 +858,7 @@ def extract_polymer_config(body)
     params[f] = player_response[f] if player_response[f]?
   end
 
-  yt_initial_data = body.match(/window\["ytInitialData"\]\s*=\s*(?<info>.*?);\n/)
-    .try { |r| JSON.parse(r["info"]).as_h }
+  yt_initial_data = extract_initial_data(body)
 
   params["relatedVideos"] = yt_initial_data.try &.["playerOverlays"]?.try &.["playerOverlayRenderer"]?
     .try &.["endScreen"]?.try &.["watchNextEndScreenRenderer"]?.try &.["results"]?.try &.as_a.compact_map { |r|
@@ -927,9 +926,9 @@ def extract_polymer_config(body)
   params["subCountText"] = JSON::Any.new(author_info.try &.["subscriberCountText"]?
     .try { |t| t["simpleText"]? || t["runs"]?.try &.[0]?.try &.["text"]? }.try &.as_s.split(" ", 2)[0] || "-")
 
-  initial_data = body.match(/ytplayer\.config\s*=\s*(?<info>.*?);ytplayer\.load/)
+  initial_data = body.match(/ytplayer\.config\s*=\s*(?<info>.*?);+ytplayer\.load/)
     .try { |r| JSON.parse(r["info"]) }.try &.["args"]["player_response"]?
-    .try &.as_s?.try &.rchop(";").try { |r| JSON.parse(r).as_h }
+    .try &.as_s?.try { |r| JSON.parse(r).as_h }
 
   return params if !initial_data
 

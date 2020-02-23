@@ -313,9 +313,60 @@ def html_to_content(description_html : String)
   return description
 end
 
+def extract_videos(initial_data : Hash(String, JSON::Any))
+  extract_items(initial_data).select(&.is_a?(SearchVideo)).map(&.as(SearchVideo))
+end
+
+def extract_items(initial_data : Hash(String, JSON::Any))
+  items = [] of SearchItem
+  initial_data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"]
+    .as_a[0]?.try &.["tabRenderer"]["content"]["sectionListRenderer"]["contents"]
+    .as_a[0]?.try &.["itemSectionRenderer"]["contents"]
+    .as_a[0]?.try &.["shelfRenderer"]["content"]["expandedShelfContentsRenderer"]["items"]
+    .as_a.each { |item|
+    if i = item["videoRenderer"]?
+      video_id = i["videoId"].as_s
+      title = i["title"].try { |t| t["simpleText"]?.try &.as_s || t["runs"]?.try &.as_a.map(&.["text"].as_s).join("") } || ""
+
+      author_info = i["ownerText"]["runs"].as_a[0]?
+      author = author_info.try &.["text"].as_s || ""
+      author_id = author_info.try &.["navigationEndpoint"]?.try &.["browseEndpoint"]["browseId"].as_s || ""
+
+      published = i["publishedTimeText"]["simpleText"]?.try { |t| decode_date(t.as_s) } || Time.local
+      view_count = i["viewCountText"]["simpleText"]?.try &.as_s.gsub(/\D+/, "").to_i64 || 0_i64
+      description_html = i["descriptionSnippet"]["simpleText"]?.try &.as_s || "<p></p>"
+      length_seconds = i["lengthText"]["simpleText"]?.try &.as_s.try { |t| decode_length_seconds(t) } || 0
+
+      # TODO
+      live_now = false
+      paid = false
+      premium = false
+      premiere_timestamp = nil
+
+      items << SearchVideo.new(
+        title: title,
+        id: video_id,
+        author: author,
+        ucid: author_id,
+        published: published,
+        views: view_count,
+        description_html: description_html,
+        length_seconds: length_seconds,
+        live_now: live_now,
+        paid: paid,
+        premium: premium,
+        premiere_timestamp: premiere_timestamp
+      )
+    else
+      # TODO
+    end
+  }
+
+  items
+end
+
 def extract_videos(nodeset, ucid = nil, author_name = nil)
-  videos = extract_items(nodeset, ucid, author_name)
-  videos.select { |item| item.is_a?(SearchVideo) }.map { |video| video.as(SearchVideo) }
+  extract_items(nodeset, ucid, author_name).select(&.is_a?(SearchVideo)).map(&.as(SearchVideo))
 end
 
 def extract_items(nodeset, ucid = nil, author_name = nil)
@@ -863,12 +914,12 @@ def create_notification_stream(env, topics, connection_channel)
   end
 end
 
-def extract_initial_data(body)
-  initial_data = body.match(/window\["ytInitialData"\] = (?<info>.*?);\n/).try &.["info"] || "{}"
+def extract_initial_data(body) : Hash(String, JSON::Any)
+  initial_data = body.match(/window\["ytInitialData"\]\s*=\s*(?<info>.*?);+\n/).try &.["info"] || "{}"
   if initial_data.starts_with?("JSON.parse(\"")
-    return JSON.parse(JSON.parse(%({"initial_data":"#{initial_data[12..-3]}"}))["initial_data"].as_s)
+    return JSON.parse(JSON.parse(%({"initial_data":"#{initial_data[12..-3]}"}))["initial_data"].as_s).as_h
   else
-    return JSON.parse(initial_data)
+    return JSON.parse(initial_data).as_h
   end
 end
 
