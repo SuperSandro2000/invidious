@@ -363,6 +363,7 @@ def extract_items(initial_data : Hash(String, JSON::Any))
 
                 # TODO: Potentially available as i["topStandaloneBadge"]["metadataBadgeRenderer"]
                 premium = true
+              else nil # Ignore
               end
             end
 

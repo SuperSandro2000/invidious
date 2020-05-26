@@ -478,8 +478,7 @@ get "/watch" do |env|
         source = preferences.comments[1]
       end
 
-      case source
-      when "youtube"
+      if source == "youtube"
         begin
           comment_html = JSON.parse(fetch_youtube_comments(id, PG_DB, nil, "html", locale, preferences.thin_mode, region))["contentHtml"]
         rescue ex
@@ -491,7 +490,7 @@ get "/watch" do |env|
             comment_html = replace_links(comment_html)
           end
         end
-      when "reddit"
+      elsif source == "reddit"
         begin
           comments, reddit_thread = fetch_reddit_comments(id)
           comment_html = template_reddit_comments(comments, locale)
@@ -3872,8 +3871,7 @@ get "/api/v1/comments/:id" do |env|
   continuation = env.params.query["continuation"]?
   sort_by = env.params.query["sort_by"]?.try &.downcase
 
-  case source
-  when "youtube"
+  if source == "youtube"
     sort_by ||= "top"
 
     begin
@@ -3885,7 +3883,7 @@ get "/api/v1/comments/:id" do |env|
     end
 
     next comments
-  when "reddit"
+  elsif source == "reddit"
     sort_by ||= "confidence"
 
     begin
