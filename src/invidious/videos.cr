@@ -709,8 +709,8 @@ struct Video
     info["shortDescription"]?.try &.as_s || ""
   end
 
-  def hls_manifest_url : String
-    info["streamingData"]?.try &.["hlsManifestUrl"]?.try &.as_s || ""
+  def hls_manifest_url : String?
+    info["streamingData"]?.try &.["hlsManifestUrl"]?.try &.as_s
   end
 
   def dash_manifest_url
