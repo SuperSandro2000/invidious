@@ -804,6 +804,7 @@ def extract_polymer_config(body)
   params = {} of String => JSON::Any
   player_response = body.match(/window\["ytInitialPlayerResponse"\]\s*=\s*(?<info>.*?);\n/)
     .try { |r| JSON.parse(r["info"]).as_h }
+
   if body.includes?("To continue with your YouTube experience, please fill out the form below.") ||
      body.includes?("https://www.google.com/sorry/index")
     params["reason"] = JSON::Any.new("Could not extract video info. Instance is likely blocked.")
@@ -893,9 +894,9 @@ def extract_polymer_config(body)
   params["subCountText"] = JSON::Any.new(author_info.try &.["subscriberCountText"]?
     .try { |t| t["simpleText"]? || t["runs"]?.try &.[0]?.try &.["text"]? }.try &.as_s.split(" ", 2)[0] || "-")
 
-  initial_data = body.match(/ytplayer\.config\s*=\s*(?<info>.*?);ytplayer\.load/)
+  initial_data = body.match(/ytplayer\.config\s*=\s*(?<info>.*?);ytplayer\.web_player_context_config/)
     .try { |r| JSON.parse(r["info"]) }.try &.["args"]["player_response"]?
-    .try &.as_s?.try &.rchop(";").try { |r| JSON.parse(r).as_h }
+    .try &.as_s?.try &.try { |r| JSON.parse(r).as_h }
 
   return params if !initial_data
 

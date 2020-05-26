@@ -735,6 +735,7 @@ def extract_shelf_items(nodeset, ucid = nil, author_name = nil)
 end
 
 def check_enum(db, logger, enum_name, struct_type = nil)
+  return # TODO
   if !db.query_one?("SELECT true FROM pg_type WHERE typname = $1", enum_name, as: Bool)
     logger.puts("CREATE TYPE #{enum_name}")
 
