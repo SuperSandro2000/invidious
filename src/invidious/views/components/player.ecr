@@ -3,7 +3,7 @@
     <% if params.autoplay %>autoplay<% end %>
     <% if params.video_loop %>loop<% end %>
     <% if params.controls %>controls<% end %>>
-    <% if (hlsvp = video.hls_manifest_url(local: true)) && !CONFIG.disabled?("livestreams") %>
+    <% if (hlsvp = URI.parse(video.hls_manifest_url ).full_path) && !CONFIG.disabled?("livestreams") %>
         <source src="<%= hlsvp %>?local=true" type="application/x-mpegURL" label="livestream">
     <% else %>
         <% if params.listen %>
